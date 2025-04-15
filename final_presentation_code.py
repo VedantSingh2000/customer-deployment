@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, roc_auc_score, roc_curve
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN
 from sklearn.mixture import GaussianMixture
@@ -56,7 +56,6 @@ def load_data(path):
     df['Dt_Customer'] = pd.to_datetime(df['Dt_Customer'], format='%d-%m-%Y')
     return df
 
-@st.cache_resource
 def feature_engineering(df):
     df['Age'] = 2025 - df['Year_Birth']
     spending_cols = ['MntWines', 'MntFruits', 'MntMeatProducts',
@@ -65,7 +64,7 @@ def feature_engineering(df):
     spending_cap = df['Total_Spending'].quantile(0.99)
     capped_count = (df['Total_Spending'] > spending_cap).sum()
     df['Total_Spending'] = np.where(df['Total_Spending'] > spending_cap, spending_cap, df['Total_Spending'])
-
+    
     median_income = df['Income'].median()
     df['Income'] = df['Income'].fillna(median_income)
     Q1 = df['Income'].quantile(0.25)
@@ -78,6 +77,7 @@ def feature_engineering(df):
     df['Children'] = df['Kidhome'] + df['Teenhome']
     df.drop(['Kidhome', 'Teenhome'], axis=1, inplace=True)
 
+    # Using Marital_Group as relationship filter
     df['Marital_Group'] = df['Marital_Status'].apply(
         lambda x: 'Single' if x in ['Single', 'Divorced', 'Widow', 'Alone', 'YOLO', 'Absurd']
         else 'Family'
@@ -96,8 +96,8 @@ def feature_engineering(df):
 
     return df, drop_cols, capped_count, out_count
 
-@st.cache_resource
 def train_rf(data, features, target='Response'):
+    # One-hot encode and scale data for modeling
     X = pd.get_dummies(data[features], drop_first=True)
     y = data[target]
     scaler = StandardScaler()
@@ -108,102 +108,122 @@ def train_rf(data, features, target='Response'):
     y_pred = model.predict(X_test)
     acc = classification_report(y_test, y_pred, output_dict=True)['accuracy']
 
+    # ROC Curve
     y_proba = model.predict_proba(X_test)[:, 1]
-    fpr, tpr, _ = roc_curve(y_test, y_proba)
+    fpr, tpr, thresholds = roc_curve(y_test, y_proba)
     roc_auc = roc_auc_score(y_test, y_proba)
-    roc_fig, roc_ax = plt.subplots(figsize=(4, 3))
+    roc_fig, roc_ax = plt.subplots(figsize=(4, 3))  # Adjusted size
     roc_ax.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
     roc_ax.plot([0, 1], [0, 1], 'k--')
     roc_ax.set_xlabel("False Positive Rate")
     roc_ax.set_ylabel("True Positive Rate")
     roc_ax.set_title("ROC Curve")
     roc_ax.legend(loc="lower right")
-    roc_fig.tight_layout()
 
+    # Feature Importance
     importances = model.feature_importances_
     feature_names = list(X.columns)
-    feature_importance_fig, feature_importance_ax = plt.subplots(figsize=(4, 3))
+    feature_importance_fig, feature_importance_ax = plt.subplots(figsize=(4, 3))  # Adjusted size
     sns.barplot(x=importances, y=feature_names, ax=feature_importance_ax)
     feature_importance_ax.set_title("Feature Importance")
-    feature_importance_fig.tight_layout()
 
     return acc, roc_fig, feature_importance_fig
 
-@st.cache_resource
 def clustering_graphs(data):
+    # Use the clustering features and run PCA for visualization
     cluster_features = ['Income', 'Age', 'Total_Spending']
     X = StandardScaler().fit_transform(data[cluster_features])
     X_pca = PCA(n_components=2).fit_transform(X)
     data['PCA1'], data['PCA2'] = X_pca[:, 0], X_pca[:, 1]
     figs = {}
 
-    models = {
-        'KMeans': KMeans(n_clusters=2, random_state=42, n_init=10),
-        'Agglomerative': AgglomerativeClustering(n_clusters=2),
-        'DBSCAN': DBSCAN(eps=1.2, min_samples=5),
-        'GMM': GaussianMixture(n_components=2, random_state=42)
-    }
+    # --- KMeans (k=2) ---
+    data['Cluster'] = KMeans(n_clusters=2, random_state=42, n_init=10).fit_predict(X)
+    fig, ax = plt.subplots(figsize=(4, 3))  # Adjusted size for better fit
+    sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='Cluster', palette='viridis', ax=ax)
+    ax.set_title("KMeans (k=2)")
+    figs['KMeans'] = fig
 
-    palettes = ['viridis', 'plasma', 'cubehelix', 'coolwarm']
+    # --- Agglomerative Clustering (k=2) ---
+    data['Cluster'] = AgglomerativeClustering(n_clusters=2).fit_predict(X)
+    fig, ax = plt.subplots(figsize=(4, 3))  # Adjusted size for better fit
+    sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='Cluster', palette='plasma', ax=ax)
+    ax.set_title("Agglomerative (k=2)")
+    figs['Agglomerative'] = fig
 
-    for i, (name, model) in enumerate(models.items()):
-        fig, ax = plt.subplots(figsize=(4, 3))
-        data['Cluster'] = model.fit_predict(X)
-        sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='Cluster', palette=palettes[i], ax=ax)
-        ax.set_title(f"{name} (k=2)" if name != 'DBSCAN' else "DBSCAN")
-        fig.tight_layout()
-        figs[name] = fig
+    # --- DBSCAN ---
+    data['Cluster'] = DBSCAN(eps=1.2, min_samples=5).fit_predict(X)
+    fig, ax = plt.subplots(figsize=(4, 3))  # Adjusted size for better fit
+    sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='Cluster', palette='cubehelix', ax=ax)
+    ax.set_title("DBSCAN")
+    figs['DBSCAN'] = fig
 
+    # --- Gaussian Mixture Model (k=2) ---
+    data['Cluster'] = GaussianMixture(n_components=2, random_state=42).fit_predict(X)
+    fig, ax = plt.subplots(figsize=(4, 3))  # Adjusted size for better fit
+    sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='Cluster', palette='coolwarm', ax=ax)
+    ax.set_title("GMM (k=2)")
+    figs['GMM'] = fig
+
+    # Clean up temporary column
     data.drop('Cluster', axis=1, inplace=True)
     return figs
 
 def main():
     st.title("🧠 Customer Segmentation Dashboard")
 
+    # --- Load and transform data ---
     df = load_data("marketing_campaign1.xlsx")
     df, dropped_cols, cap_count, out_count = feature_engineering(df)
 
+    # --- Sidebar Filter Options ---
     st.sidebar.markdown("<div class='sidebar-header'>Filter Options</div>", unsafe_allow_html=True)
+    
     rel_options = list(df["Marital_Group"].unique())
     edu_options = list(df["Education"].unique())
+    
     selected_rel = st.sidebar.multiselect("Select Relationship (Marital Group)", options=rel_options, default=rel_options)
     selected_edu = st.sidebar.multiselect("Select Education Level", options=edu_options, default=edu_options)
+    
     min_income = int(df["Income"].min())
     max_income = int(df["Income"].max())
     selected_income = st.sidebar.slider("Income Range", min_value=min_income, max_value=max_income, value=(min_income, max_income))
-
+    
+    # --- Apply filters to data ---
     filtered_df = df[
         (df["Marital_Group"].isin(selected_rel)) &
         (df["Education"].isin(selected_edu)) &
         (df["Income"] >= selected_income[0]) &
         (df["Income"] <= selected_income[1])
     ]
-
+    
+    # --- Compute main model accuracy using filtered data ---
     used_features = ['Income', 'Age', 'Total_Spending', 'Education', 'Marital_Group', 'Children']
-
-    with st.spinner("Training Random Forest Model..."):
-        accuracy, roc_fig, feature_importance_fig = train_rf(filtered_df, used_features)
-
-    with st.spinner("Generating Clustering Visualizations..."):
-        cluster_figs = clustering_graphs(filtered_df)
-
+    accuracy, roc_fig, feature_importance_fig = train_rf(filtered_df, used_features)
+    
+    # --- Clustering visualizations based on filtered data ---
+    cluster_figs = clustering_graphs(filtered_df)
+    
+    # --- Display Insights and Performance ---
     st.header("📊 Insights and Model Performance")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("📌 Data Overview")
-        st.write(f"**Values capped from Total Spending:** {cap_count}")
-        st.write(f"**Income outliers removed:** {out_count}")
-        st.write(f"**Deleted columns:** {', '.join(dropped_cols)}")
-        st.write(f"**Features used for model:** {', '.join(used_features)}")
-    with col2:
-        st.subheader("✅ Random Forest Accuracy")
-        st.metric(label="Model Accuracy", value=f"{accuracy:.2%}")
-
+    with st.container():
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("📌 Data Overview")
+            st.write(f"**Values capped from Total Spending:** {cap_count}")
+            st.write(f"**Income outliers removed:** {out_count}")
+            st.write(f"**Deleted columns:** {', '.join(dropped_cols)}")
+            st.write(f"**Features used for model:** {', '.join(used_features)}")
+        with col2:
+            st.subheader("✅ Random Forest Accuracy")
+            st.metric(label="Model Accuracy", value=f"{accuracy:.2%}")
+    
     st.divider()
 
+    # --- Display Model Performance Highlights (ROC Curve and Feature Importance) ---
     st.header("🎯 Model Performance Highlights")
     st.markdown("Hover over each graph to expand 👇")
-    cols = st.columns(2)
+    cols = st.columns(2)  # Reduced to 2 columns
 
     with cols[0]:
         st.markdown("<div class='title-highlight'>ROC Curve</div>", unsafe_allow_html=True)
@@ -218,11 +238,13 @@ def main():
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
-
+    
+    # --- Display Model Highlights (Clustering Graphs) ---
     st.header("🌀 Clustering Model Highlights")
     st.markdown("Hover over each graph to expand 👇")
     cols = st.columns(4)
-    for i, name in enumerate(cluster_figs):
+    model_names = list(cluster_figs.keys())
+    for i, name in enumerate(model_names):
         with cols[i]:
             st.markdown(f"<div class='title-highlight'>{name}</div>", unsafe_allow_html=True)
             st.markdown("<div class='graph-container'>", unsafe_allow_html=True)
