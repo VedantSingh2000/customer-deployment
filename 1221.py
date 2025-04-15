@@ -32,27 +32,19 @@ st.markdown(
         color: #4a4a4a;
         text-align: center;
     }
-    .small-graph {
-        width: 200px;
-        height: 150px;
-        transition: width 0.3s, height 0.3s;
-        border-radius: 10px;
-        box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
+    .graph-container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 20px;
     }
-    .small-graph:hover {
-        width: 400px;
-        height: 300px;
+    .graph-container .graph-box {
+        transition: all 0.3s ease;
+        transform: scale(1);
     }
-    .clustering-graph {
-        width: 200px;
-        height: 150px;
-        transition: width 0.3s, height 0.3s;
-        border-radius: 10px;
-        box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
-    }
-    .clustering-graph:hover {
-        width: 400px;
-        height: 300px;
+    .graph-container .graph-box:hover {
+        transform: scale(1.5);
+        z-index: 100;
     }
     </style>
     """,
@@ -110,7 +102,7 @@ def random_forest(data, features, target):
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
     y_prob = model.predict_proba(X_test)[:,1]
-    
+
     report = classification_report(y_test, y_pred, output_dict=True)
     conf = confusion_matrix(y_test, y_pred)
     auc = roc_auc_score(y_test, y_prob)
@@ -158,15 +150,15 @@ def cluster_visuals(data):
     return plots
 
 def main():
-    st.markdown('<div class="title-style">Customer Segmentation & Prediction Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="title-style">🚀 Customer Segmentation & Prediction Dashboard 🎯</div>', unsafe_allow_html=True)
     df = load_data()
     df, dropped, cap_count, outlier_count = preprocess_data(df)
 
     col_filters = st.sidebar
     col_filters.header("🔎 Filters")
-    selected_edu = col_filters.multiselect("Select Education Level:", options=df['Education'].unique(), default=df['Education'].unique())
-    selected_marital = col_filters.multiselect("Select Marital Group:", options=df['Marital_Group'].unique(), default=df['Marital_Group'].unique())
-    income_range = col_filters.slider("Select Income Range:", min_value=int(df['Income'].min()), max_value=int(df['Income'].max()), value=(int(df['Income'].min()), int(df['Income'].max())))
+    selected_edu = col_filters.multiselect("🎓 Select Education Level:", options=df['Education'].unique(), default=df['Education'].unique())
+    selected_marital = col_filters.multiselect("💍 Select Marital Group:", options=df['Marital_Group'].unique(), default=df['Marital_Group'].unique())
+    income_range = col_filters.slider("💰 Select Income Range:", min_value=int(df['Income'].min()), max_value=int(df['Income'].max()), value=(int(df['Income'].min()), int(df['Income'].max())))
 
     df_filtered = df[(df['Education'].isin(selected_edu)) &
                      (df['Marital_Group'].isin(selected_marital)) &
@@ -179,16 +171,26 @@ def main():
     col1, col2 = st.columns([1, 1])
     with col1:
         st.header("📌 Model & Data Insights")
-        st.metric("Accuracy", f"{accuracy*100:.2f}%")
-        st.write(f"Capped Spending values: {cap_count}")
-        st.write(f"Removed Income outliers: {outlier_count}")
-        st.write("Dropped Columns:", dropped)
-        st.write("Features used:", features)
-        st.write("Models Applied: Random Forest, KMeans, Agglomerative, GMM, DBSCAN 🚀")
+        st.metric("✅ Accuracy", f"{accuracy*100:.2f}%")
+        st.write(f"📦 Capped Spending values: {cap_count}")
+        st.write(f"📉 Removed Income outliers: {outlier_count}")
+        st.write("🧾 Dropped Columns:", dropped)
+        st.write("🧮 Features used:", features)
+        st.write("🤖 Models Applied: Random Forest 🌲, KMeans 🎯, Agglomerative 🧩, GMM 🎲, DBSCAN 🌌")
+
+        st.markdown("### 🧭 Module Flowchart")
+        g = graphviz.Digraph()
+        g.node("A", "📥 Load Data")
+        g.node("B", "🛠️ Preprocess")
+        g.node("C", "🌲 Random Forest")
+        g.node("D", "🔀 Clustering")
+        g.node("E", "📊 Dashboard")
+        g.edges([("A", "B"), ("B", "C"), ("B", "D"), ("D", "E")])
+        st.graphviz_chart(g)
 
     with col2:
         st.header("📈 Visualizations")
-        st.subheader("Random Forest Performance")
+        st.subheader("📊 Random Forest Performance")
         fig_conf, ax_conf = plt.subplots()
         sns.heatmap(conf, annot=True, cmap='Blues', fmt='d', ax=ax_conf)
         ax_conf.set_title("Confusion Matrix")
@@ -206,21 +208,11 @@ def main():
         ax_imp.set_title("Feature Importance")
         st.pyplot(fig_imp)
 
-    st.markdown("### 🔍 Cluster Visualizations")
+    st.markdown("### 🔍 Cluster Visualizations 🌀")
     clust_cols = st.columns(len(plots))
     for i, (name, fig) in enumerate(plots.items()):
         with clust_cols[i]:
             st.pyplot(fig, use_container_width=True)
-
-    st.markdown("### 🧭 Module Flowchart")
-    g = graphviz.Digraph()
-    g.node("A", "Load Data")
-    g.node("B", "Preprocess")
-    g.node("C", "Random Forest")
-    g.node("D", "Clustering")
-    g.node("E", "Flowchart")
-    g.edges([("A", "B"), ("B", "C"), ("B", "D"), ("D", "E")])
-    st.graphviz_chart(g)
 
 if __name__ == "__main__":
     main()
