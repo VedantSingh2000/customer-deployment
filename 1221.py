@@ -13,43 +13,11 @@ from sklearn.mixture import GaussianMixture
 from sklearn.decomposition import PCA
 import scipy.cluster.hierarchy as sch
 import graphviz
+import streamlit.components.v1 as components
+import base64
+from io import BytesIO
 
 st.set_page_config(layout="wide", page_title="Customer Dashboard", page_icon="📊")
-
-# --- Custom CSS Styling ---
-st.markdown(
-    """
-    <style>
-    .main {
-        background-color: #f5f5f5;
-    }
-    .block-container {
-        padding-top: 2rem;
-    }
-    .title-style {
-        font-size: 3rem;
-        font-weight: bold;
-        color: #4a4a4a;
-        text-align: center;
-    }
-    .graph-container {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 20px;
-    }
-    .graph-container .graph-box {
-        transition: all 0.3s ease;
-        transform: scale(1);
-    }
-    .graph-container .graph-box:hover {
-        transform: scale(1.5);
-        z-index: 100;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 @st.cache_data
 def load_data():
@@ -119,25 +87,37 @@ def cluster_visuals(data):
 
     plots = {}
 
+    def fig_to_html(fig):
+        buf = BytesIO()
+        fig.savefig(buf, format="png", bbox_inches='tight')
+        buf.seek(0)
+        encoded = base64.b64encode(buf.read()).decode()
+        html = f"""
+        <div style='transition: transform 0.3s ease; margin: 10px; width: 250px; height: auto; overflow: hidden;'>
+            <img src='data:image/png;base64,{encoded}' style='width:100%; height:auto; border-radius:10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); transition: transform 0.3s ease-in-out;' onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'"/>
+        </div>
+        """
+        return html
+
     kmeans = KMeans(n_clusters=2, random_state=42)
     data['KMeans'] = kmeans.fit_predict(scaled)
     fig1, ax1 = plt.subplots()
     sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='KMeans', palette='tab10', ax=ax1)
     ax1.set_title("KMeans Clustering (k=2)")
-    plots['KMeans'] = fig1
+    plots['KMeans'] = fig_to_html(fig1)
     data.drop(columns=['KMeans'], inplace=True)
 
     fig2, ax2 = plt.subplots()
     sch.dendrogram(sch.linkage(scaled, method='ward'), no_labels=True, ax=ax2)
     ax2.set_title("Agglomerative Dendrogram (k=2)")
-    plots['Agglomerative'] = fig2
+    plots['Agglomerative'] = fig_to_html(fig2)
 
     gmm = GaussianMixture(n_components=2, random_state=42)
     data['GMM'] = gmm.fit_predict(scaled)
     fig3, ax3 = plt.subplots()
     sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='GMM', palette='tab10', ax=ax3)
     ax3.set_title("GMM Clustering (k=2)")
-    plots['GMM'] = fig3
+    plots['GMM'] = fig_to_html(fig3)
     data.drop(columns=['GMM'], inplace=True)
 
     dbscan = DBSCAN(eps=0.5, min_samples=5)
@@ -145,12 +125,12 @@ def cluster_visuals(data):
     fig4, ax4 = plt.subplots()
     sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='DBSCAN', palette='tab10', ax=ax4)
     ax4.set_title("DBSCAN Clustering")
-    plots['DBSCAN'] = fig4
+    plots['DBSCAN'] = fig_to_html(fig4)
 
     return plots
 
 def main():
-    st.markdown('<div class="title-style">🚀 Customer Segmentation & Prediction Dashboard 🎯</div>', unsafe_allow_html=True)
+    st.title("📊 Customer Segmentation & Prediction Dashboard")
     df = load_data()
     df, dropped, cap_count, outlier_count = preprocess_data(df)
 
@@ -168,51 +148,16 @@ def main():
     accuracy, conf, auc, fpr, tpr, importances, feature_names = random_forest(df_filtered, features, 'Response')
     plots = cluster_visuals(df_filtered)
 
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        st.header("📌 Model & Data Insights")
-        st.metric("✅ Accuracy", f"{accuracy*100:.2f}%")
-        st.write(f"📦 Capped Spending values: {cap_count}")
-        st.write(f"📉 Removed Income outliers: {outlier_count}")
-        st.write("🧾 Dropped Columns:", dropped)
-        st.write("🧮 Features used:", features)
-        st.write("🤖 Models Applied: Random Forest 🌲, KMeans 🎯, Agglomerative 🧩, GMM 🎲, DBSCAN 🌌")
+    st.header("📌 Model Insights")
+    st.metric("✅ Accuracy", f"{accuracy*100:.2f}%")
 
-        st.markdown("### 🧭 Module Flowchart")
-        g = graphviz.Digraph()
-        g.node("A", "📥 Load Data")
-        g.node("B", "🛠️ Preprocess")
-        g.node("C", "🌲 Random Forest")
-        g.node("D", "🔀 Clustering")
-        g.node("E", "📊 Dashboard")
-        g.edges([("A", "B"), ("B", "C"), ("B", "D"), ("D", "E")])
-        st.graphviz_chart(g)
+    st.subheader("🌀 Cluster Visualizations")
+    html_content = "".join(plots.values())
+    components.html(f"""
+        <div style='display:flex; flex-wrap: wrap; justify-content: center;'>
+            {html_content}
+        </div>
+    """, height=600, scrolling=True)
 
-    with col2:
-        st.header("📈 Visualizations")
-        st.subheader("📊 Random Forest Performance")
-        fig_conf, ax_conf = plt.subplots()
-        sns.heatmap(conf, annot=True, cmap='Blues', fmt='d', ax=ax_conf)
-        ax_conf.set_title("Confusion Matrix")
-        st.pyplot(fig_conf)
-
-        fig_roc, ax_roc = plt.subplots()
-        ax_roc.plot(fpr, tpr, label=f"AUC = {auc:.2f}")
-        ax_roc.plot([0,1],[0,1],'k--')
-        ax_roc.set_title("ROC Curve")
-        st.pyplot(fig_roc)
-
-        fig_imp, ax_imp = plt.subplots()
-        sorted_idx = np.argsort(importances)[::-1]
-        sns.barplot(x=importances[sorted_idx], y=np.array(feature_names)[sorted_idx], ax=ax_imp, palette='mako')
-        ax_imp.set_title("Feature Importance")
-        st.pyplot(fig_imp)
-
-    st.markdown("### 🔍 Cluster Visualizations 🌀")
-    clust_cols = st.columns(len(plots))
-    for i, (name, fig) in enumerate(plots.items()):
-        with clust_cols[i]:
-            st.pyplot(fig, use_container_width=True)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
