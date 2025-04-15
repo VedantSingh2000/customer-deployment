@@ -1,42 +1,40 @@
-🧠 Customer Personality Analysis Dashboard
-A dynamic dashboard built using Streamlit to analyze customer segments and evaluate marketing strategies based on behavioral data. This project helps businesses identify potential customers and design targeted marketing campaigns.
+# 🧠 Customer Personality Analysis Dashboard
 
-📊 Dashboard Features
-🔍 Main Components:
-Random Forest Model Accuracy
+A dynamic dashboard built using **Streamlit** to analyze customer segments and evaluate marketing strategies based on behavioral data. This project helps businesses **identify potential customers** and design **targeted marketing campaigns**.
 
-ROC Curve and Feature Importance Graph
+---
 
-K-Means, Agglomerative, DBSCAN, GMM Clustering (K=2)
+## 📊 Dashboard Features
 
-Dynamic Clustering Visuals (expand on hover)
+### 🔍 Main Components:
+- ✅ **Random Forest Model Accuracy**
+- 📉 **ROC Curve** and 📊 **Feature Importance Graph**
+- 🌀 **K-Means, Agglomerative, DBSCAN, GMM Clustering** (k=2 by default)
+- 🔍 **Interactive Cluster Visuals** (expand on hover)
+- 📌 **Insights and Model Performance Summary**
 
-Insights and Model Performance Summary
+### 🧩 Sidebar Filters:
+- 💍 **Marital Group** (`Family`, `Single`)
+- 🎓 **Education Level** (`Undergraduate`, `Graduate`, `Postgraduate`)
+- 💰 **Income Range** (slider)
+- 🎯 **Number of Clusters** (for all 4 clustering models)
 
-🧩 Filters:
-Marital Status Group (Alone, In Couple)
+---
 
-Education Level (Graduation, Master, PhD, Basic, 2n Cycle)
+## 📁 Project Structure
 
-Income Range (slider)
+. ├── app.py # Streamlit dashboard code ├── models/ │ └── random_forest.pkl # Trained classification model (optional) ├── data/ │ └── marketing_campaign1.xlsx # Original dataset ├── requirements.txt # List of Python dependencies └── README.md # Project documentation
 
-📁 Project Structure
-bash
+yaml
 Copy
 Edit
-.
-├── app.py                  # Streamlit dashboard code
-├── models/
-│   └── random_forest.pkl   # Trained classification model
-├── data/
-│   └── cleaned_data.csv    # Cleaned and feature-engineered dataset
-├── requirements.txt        # List of Python dependencies
-└── README.md               # Project documentation
-🚀 How to Run the Project
-1. Clone the Repository
-bash
-Copy
-Edit
+
+---
+
+## 🚀 How to Run the Project
+
+### 1. Clone the Repository
+```bash
 git clone https://github.com/your-username/customer-personality-analysis.git
 cd customer-personality-analysis
 2. Create a Virtual Environment
@@ -44,7 +42,7 @@ bash
 Copy
 Edit
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # For Windows: venv\Scripts\activate
 3. Install Dependencies
 bash
 Copy
@@ -56,44 +54,50 @@ Copy
 Edit
 streamlit run app.py
 📌 Data Highlights
-Data Overview: Includes customer demographics, purchase behavior, and campaign response.
+Cleaned and Processed Dataset
 
-Feature Engineering:
+Created new features like Total_Spending and Age
 
-Total_Spending column created
+Capped high spending values at 99th percentile
 
-Outliers removed from income
+Removed income outliers using IQR method
 
-Dropped irrelevant or sparse columns
-
-Cluster Analysis: Summarized using 4 unsupervised models for better customer understanding.
+Dropped redundant columns: ID, Year_Birth, Dt_Customer, etc.
 
 📈 Model Insights
-Classification: Random Forest with accuracy and ROC AUC score
+Random Forest Classifier:
 
-Clustering: Helps identify distinct customer personas
+Shows Accuracy, Confusion Matrix, ROC Curve, and Feature Importance
 
-Filters: Dynamically refine visuals based on marital status, education, and income
+Clustering Models:
+
+KMeans, Agglomerative, DBSCAN, GMM – each visualized on PCA-transformed data
+
+Insights Panel:
+
+Highlights capped values, removed outliers, dropped columns, and model features
 
 🛠️ Tech Stack
 Python 3.9+
 
 Streamlit
 
-Pandas, Numpy, Scikit-learn
+Pandas, NumPy
 
-Matplotlib, Seaborn, Plotly
+Scikit-learn
 
-Joblib
+Matplotlib, Seaborn
+
+Graphviz (optional)
 
 💡 Future Enhancements
-Add predictive analytics for future purchases
+Predictive analytics for product recommendations
 
-Integrate more interactive visuals
+Cluster profiling for each customer segment
 
-Support for multi-language dashboard
+Multi-language dashboard support
+
+Dark mode / theme toggling
 
 👤 Author
 Vedant
-📫 Reach out: LinkedIn | Email
-
