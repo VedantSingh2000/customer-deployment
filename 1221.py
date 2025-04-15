@@ -41,12 +41,54 @@ st.markdown(
         padding: 10px;
         border-radius: 5px;
         cursor: pointer;
+        color: black;
+    }
+    summary:hover, summary:active {
+        color: red;
     }
     details {
         margin-bottom: 10px;
     }
     /* Styling for the tables */
-    .red-table th, .red-table td {\n  border: 1px solid #ddd;\n  padding: 8px;\n  background-color: #fdd;\n}\n.red-table th {\n  background-color: #e74c3c;\n  color: white;\n}\n\n.green-table th, .green-table td {\n  border: 1px solid #ddd;\n  padding: 8px;\n  background-color: #dfedda;\n}\n.green-table th {\n  background-color: #27ae60;\n  color: white;\n}\n    /* CSS for hover-expand cluster visualizations */\n    .hover-box {\n        width: 100%;\n        overflow: hidden;\n        transition: transform 0.3s ease;\n        box-shadow: 0 2px 6px rgba(0,0,0,0.1);\n        border-radius: 10px;\n        margin-bottom: 1rem;\n    }\n    .hover-box:hover {\n        transform: scale(1.25);\n        z-index: 10;\n    }\n    .img-wrap {\n        display: flex;\n        justify-content: center;\n    }\n    </style>\n    """,
+    .red-table th, .red-table td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      background-color: #fdd;
+      color: red;
+    }
+    .red-table th {
+      background-color: #e74c3c;
+      color: white;
+    }
+    .green-table th, .green-table td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      background-color: #dfedda;
+      color: green;
+    }
+    .green-table th {
+      background-color: #27ae60;
+      color: white;
+    }
+    /* CSS for hover-expand cluster visualizations */
+    .hover-box {
+        width: 100%;
+        overflow: hidden;
+        transition: transform 0.3s ease;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        border-radius: 10px;
+        margin-bottom: 1rem;
+    }
+    .hover-box:hover {
+        transform: scale(1.25);
+        z-index: 10;
+    }
+    .img-wrap {
+        display: flex;
+        justify-content: center;
+    }
+    </style>
+    """,
     unsafe_allow_html=True,
 )
 
@@ -96,7 +138,6 @@ def random_forest(data, features, target):
     y = data[target]
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-    from sklearn.model_selection import train_test_split
     X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.3, stratify=y, random_state=42)
     
     model = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -201,7 +242,6 @@ def main():
         col_a, col_b = st.columns(2)
         with col_a:
             st.markdown("### 🧾 Dropped Columns")
-            # Build a HTML table for dropped columns with red styling
             red_table = "<table class='red-table'><tr><th>Dropped Columns</th></tr>"
             for col in dropped:
                 red_table += f"<tr><td>{col}</td></tr>"
@@ -253,7 +293,6 @@ def main():
     
     # Cluster Visualizations with hover expand effect
     st.markdown("### 🔍 Cluster Visualizations 🌀")
-    # Define HTML/CSS block for hover effect (each image expands on hover)
     st.markdown(
         """
         <style>
