@@ -1,208 +1,335 @@
-import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import warnings
+warnings.filterwarnings("ignore")
+
+# Clustering & dimensionality reduction libraries
+from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN
+from sklearn.mixture import GaussianMixture
+from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+# Supervised learning libraries
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve
-from sklearn.preprocessing import StandardScaler
-from sklearn.inspection import permutation_importance
-from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN
-from sklearn.mixture import GaussianMixture
-from sklearn.decomposition import PCA
+
+# For dendrogram visualization in Agglomerative Clustering
 import scipy.cluster.hierarchy as sch
-import graphviz
 
-st.set_page_config(layout="wide", page_title="Customer Dashboard", page_icon="📊")
+# Set seaborn style for better aesthetics
+sns.set(style="whitegrid")
 
-# --- Custom CSS Styling ---
-st.markdown(
-    """
-    <style>
-    .main {
-        background-color: #f5f5f5;
-    }
-    .block-container {
-        padding-top: 2rem;
-    }
-    .title-style {
-        font-size: 3rem;
-        font-weight: bold;
-        color: #4a4a4a;
-        text-align: center;
-    }
-    .small-graph {
-        width: 200px;
-        height: 150px;
-        transition: width 0.3s, height 0.3s;
-        border-radius: 10px;
-        box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
-    }
-    .small-graph:hover {
-        width: 400px;
-        height: 300px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
-@st.cache_data
+# Load the dataset from an Excel file
+data = pd.read_excel("marketing_campaign1.xlsx")
 
-def load_data():
-    df = pd.read_excel("marketing_campaign1.xlsx")
-    df['Dt_Customer'] = pd.to_datetime(df['Dt_Customer'], format='%d-%m-%Y')
-    return df
+# Basic inspection
+print("Dataset Head:")
+print(data.head())
+print("\nDataset Info:")
+print(data.info())
+print("\nDataset Description:")
+print(data.describe())
+print("\nMissing Values per Column:")
+print(data.isnull().sum())
 
-def preprocess_data(data):
-    data['Age'] = 2025 - data['Year_Birth']
-    data['Total_Spending'] = data[['MntWines', 'MntFruits', 'MntMeatProducts',
-                                   'MntFishProducts', 'MntSweetProducts', 'MntGoldProds']].sum(axis=1)
-    cap_val = data['Total_Spending'].quantile(0.99)
-    capped_count = (data['Total_Spending'] > cap_val).sum()
-    data['Total_Spending'] = np.where(data['Total_Spending'] > cap_val, cap_val, data['Total_Spending'])
 
-    median_income = data['Income'].median()
-    data['Income'].fillna(median_income, inplace=True)
+# Convert date column to datetime format
+data['Dt_Customer'] = pd.to_datetime(data['Dt_Customer'], format='%d-%m-%Y')
+print("\nThe newest customer's enrolment date:", data['Dt_Customer'].max())
+print("The oldest customer's enrolment date:", data['Dt_Customer'].min())
 
-    Q1 = data['Income'].quantile(0.25)
-    Q3 = data['Income'].quantile(0.75)
-    IQR = Q3 - Q1
-    lower = Q1 - 1.5 * IQR
-    upper = Q3 + 1.5 * IQR
-    outliers = len(data[(data['Income'] < lower) | (data['Income'] > upper)])
-    data['Income'] = np.clip(data['Income'], lower, upper)
+# Impute missing Income values with median
+median_income = data['Income'].median()
+data['Income'] = data['Income'].fillna(median_income)
+print(f"\nFilled missing Income values with median: {median_income}")
 
-    data['Children'] = data['Kidhome'] + data['Teenhome']
-    data.drop(['Kidhome', 'Teenhome'], axis=1, inplace=True)
+# Handle outliers in Income using the IQR method
+Q1 = data['Income'].quantile(0.25)
+Q3 = data['Income'].quantile(0.75)
+IQR = Q3 - Q1
+lower_bound = Q1 - 1.5 * IQR
+upper_bound = Q3 + 1.5 * IQR
+print(f"\nIncome lower bound: {lower_bound:.2f}, upper bound: {upper_bound:.2f}")
+data['Income'] = np.clip(data['Income'], lower_bound, upper_bound)
 
-    data['Marital_Group'] = data['Marital_Status'].apply(lambda x: 'Single' if x in ['Single','YOLO','Absurd','Divorced','Widow','Alone'] else 'Family')
-    data['Education'] = data['Education'].replace({
-        'Basic': 'Undergraduate',
-        '2n Cycle': 'Undergraduate',
-        'Graduation': 'Graduate',
-        'Master': 'Postgraduate',
-        'PhD': 'Postgraduate'})
+# Feature Engineering
+data['Age'] = 2025 - data['Year_Birth']
 
-    drop_cols = ['ID', 'Year_Birth', 'Dt_Customer', 'Z_CostContact', 'Z_Revenue']
-    data.drop(columns=drop_cols, inplace=True)
-    return data, drop_cols, capped_count, outliers
+spending_cols = ['MntWines', 'MntFruits', 'MntMeatProducts', 
+                 'MntFishProducts', 'MntSweetProducts', 'MntGoldProds']
+data['Total_Spending'] = data[spending_cols].sum(axis=1)
+spending_cap = data['Total_Spending'].quantile(0.99)
+data['Total_Spending'] = np.where(data['Total_Spending'] > spending_cap, spending_cap, data['Total_Spending'])
 
-def random_forest(data, features, target):
-    X = pd.get_dummies(data[features], drop_first=True)
-    y = data[target]
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.3, stratify=y, random_state=42)
+# Combine Kidhome and Teenhome into a single 'Children' feature
+data['Children'] = data['Kidhome'] + data['Teenhome']
+data.drop(['Kidhome', 'Teenhome'], axis=1, inplace=True)
 
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-    y_prob = model.predict_proba(X_test)[:,1]
+# Group Marital Status into 'Single' and 'Family'
+single_statuses = ['Single', 'Divorced', 'Widow', 'Alone', 'YOLO', 'Absurd']
+family_statuses = ['Married', 'Together']
+data['Marital_Group'] = data['Marital_Status'].apply(lambda x: 'Single' if x in single_statuses 
+                                                      else ('Family' if x in family_statuses else x))
+
+# Education segmentation
+data['Education'] = data['Education'].replace({
+    'Basic': 'Undergraduate', 
+    '2n Cycle': 'Undergraduate', 
+    'Graduation': 'Graduate', 
+    'Master': 'Postgraduate', 
+    'PhD': 'Postgraduate'
+})
+
+# Drop redundant columns
+data.drop(['ID', 'Year_Birth', 'Dt_Customer', 'Z_CostContact', 'Z_Revenue'], axis=1, inplace=True)
+
+
+# Pair Plot for key numerical features
+sns.pairplot(data[['Income', 'Age', 'Total_Spending', 'Children']], diag_kind='kde', palette='coolwarm')
+plt.suptitle("Pair Plot of Key Numerical Features", y=1.02)
+plt.show()
+
+# Bar Chart: Average Total Spending by Marital Group
+plt.figure(figsize=(8,6))
+avg_spending_by_group = data.groupby('Marital_Group')['Total_Spending'].mean().sort_values(ascending=False)
+sns.barplot(x=avg_spending_by_group.index, y=avg_spending_by_group.values, palette='viridis')
+plt.title("Average Total Spending by Marital Group")
+plt.xlabel("Marital Group")
+plt.ylabel("Average Total Spending")
+plt.show()
+
+# Histograms for Income, Age, and Total Spending
+plt.figure(figsize=(15,4))
+plt.subplot(1,3,1)
+sns.histplot(data['Income'], kde=True, color='skyblue')
+plt.title("Income Distribution")
+plt.subplot(1,3,2)
+sns.histplot(data['Age'], kde=True, color='salmon')
+plt.title("Age Distribution")
+plt.subplot(1,3,3)
+sns.histplot(data['Total_Spending'], kde=True, color='gold')
+plt.title("Total Spending Distribution")
+plt.tight_layout()
+plt.show()
+
+# Correlation Heatmap of Numerical Features
+plt.figure(figsize=(10,8))
+num_features = ['Income', 'Age', 'Total_Spending', 'Children'] + spending_cols
+sns.heatmap(data[num_features].corr(), annot=True, cmap='coolwarm', fmt=".2f")
+plt.title("Correlation Heatmap of Numerical Features")
+plt.show()
+
+
+# Define features for clustering and standardize them
+clustering_features = ['Income', 'Age', 'Total_Spending']
+X_orig = data[clustering_features]
+scaler = StandardScaler()
+X = scaler.fit_transform(X_orig)
+
+# PCA for visualizations across clustering models
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X)
+data['PCA1'] = X_pca[:, 0]
+data['PCA2'] = X_pca[:, 1]
+
+
+print("\n----- K-Means Clustering -----")
+sse = []
+silhouette_scores = []
+k_values = range(2, 9)
+for k in k_values:
+    km = KMeans(n_clusters=k, random_state=42, n_init=10)
+    km.fit(X)
+    sse.append(km.inertia_)
+    labels = km.labels_
+    silhouette_scores.append(silhouette_score(X, labels))
     
-    report = classification_report(y_test, y_pred, output_dict=True)
-    conf = confusion_matrix(y_test, y_pred)
-    auc = roc_auc_score(y_test, y_prob)
-    fpr, tpr, _ = roc_curve(y_test, y_prob)
+# Plot Elbow Curve
+plt.figure(figsize=(8,4))
+plt.plot(k_values, sse, marker='o')
+plt.title("Elbow Curve for K-Means")
+plt.xlabel("Number of Clusters (k)")
+plt.ylabel("Sum of Squared Errors (SSE)")
+plt.show()
 
-    importance = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=42)
-    return report['accuracy'], conf, auc, fpr, tpr, importance.importances_mean, X.columns.tolist()
+# Plot Silhouette Scores for K-Means
+plt.figure(figsize=(8,4))
+plt.plot(k_values, silhouette_scores, marker='s', color='red')
+plt.title("Silhouette Scores for K-Means")
+plt.xlabel("Number of Clusters (k)")
+plt.ylabel("Silhouette Score")
+plt.show()
 
-def cluster_visuals(data):
-    clustering_cols = ['Income', 'Age', 'Total_Spending']
-    scaled = StandardScaler().fit_transform(data[clustering_cols])
-    pca = PCA(n_components=2).fit_transform(scaled)
-    data['PCA1'], data['PCA2'] = pca[:,0], pca[:,1]
+# --- Additional Visualizations for K-Means with Each k Value ---
+print("\n----- Additional K-Means Cluster Visualizations for each k -----")
+for k in k_values:
+    km_temp = KMeans(n_clusters=k, random_state=42, n_init=10)
+    labels_temp = km_temp.fit_predict(X)
+    silhouette_temp = silhouette_score(X, labels_temp)
+    data['Temp_KMeans'] = labels_temp  # Temporary label column
+    plt.figure(figsize=(8,6))
+    sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='Temp_KMeans', palette='tab10', alpha=0.7)
+    # Project cluster centers onto PCA space
+    centers_temp = km_temp.cluster_centers_
+    centers_pca_temp = pca.transform(centers_temp)
+    plt.scatter(centers_pca_temp[:, 0], centers_pca_temp[:, 1], s=200, c='black', marker='X', label='Centers')
+    plt.title(f"K-Means Clusters via PCA for k={k} | Silhouette: {silhouette_temp:.3f}")
+    plt.legend()
+    plt.show()
 
-    plots = {}
+# Determine best k for K-Means
+best_k = k_values[silhouette_scores.index(max(silhouette_scores))]
+print(f"Best K for K-Means based on silhouette score: {best_k}")
+kmeans_best = KMeans(n_clusters=best_k, random_state=42, n_init=10)
+data['Cluster_KMeans'] = kmeans_best.fit_predict(X)
 
-    kmeans = KMeans(n_clusters=2, random_state=42)
-    data['KMeans'] = kmeans.fit_predict(scaled)
-    fig1, ax1 = plt.subplots()
-    sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='KMeans', palette='tab10', ax=ax1)
-    ax1.set_title("KMeans Clustering (k=2)")
-    plots['KMeans'] = fig1
-    data.drop(columns=['KMeans'], inplace=True)
+# Visualization for K-Means clusters (Best k) with cluster centers
+plt.figure(figsize=(8,6))
+sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='Cluster_KMeans', palette='coolwarm', alpha=0.7)
+centers = kmeans_best.cluster_centers_
+centers_pca = pca.transform(centers)
+plt.scatter(centers_pca[:, 0], centers_pca[:, 1], s=200, c='black', marker='X', label='Centers')
+plt.title("K-Means Clusters via PCA (Best k)")
+plt.legend()
+plt.show()
 
-    fig2, ax2 = plt.subplots()
-    sch.dendrogram(sch.linkage(scaled, method='ward'), no_labels=True, ax=ax2)
-    ax2.set_title("Agglomerative Dendrogram (k=2)")
-    plots['Agglomerative'] = fig2
 
-    gmm = GaussianMixture(n_components=2, random_state=42)
-    data['GMM'] = gmm.fit_predict(scaled)
-    fig3, ax3 = plt.subplots()
-    sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='GMM', palette='tab10', ax=ax3)
-    ax3.set_title("GMM Clustering (k=2)")
-    plots['GMM'] = fig3
-    data.drop(columns=['GMM'], inplace=True)
+print("\n----- Agglomerative Clustering -----")
+agglo_scores = {}
+for k in k_values:
+    agglo = AgglomerativeClustering(n_clusters=k)
+    labels = agglo.fit_predict(X)
+    score = silhouette_score(X, labels)
+    agglo_scores[k] = score
+    print(f"Agglomerative Clustering with k={k}, Silhouette Score: {score:.3f}")
+best_k_agglo = max(agglo_scores, key=agglo_scores.get)
+print(f"Best K for Agglomerative Clustering: {best_k_agglo}")
+agglo_best = AgglomerativeClustering(n_clusters=best_k_agglo)
+data['Cluster_Agg'] = agglo_best.fit_predict(X)
 
-    return plots
+# Visualization for Agglomerative Clusters via PCA
+plt.figure(figsize=(8,6))
+sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='Cluster_Agg', palette='viridis', alpha=0.7)
+plt.title("Agglomerative Clusters via PCA")
+plt.show()
 
-def main():
-    st.markdown('<div class="title-style">Customer Segmentation & Prediction Dashboard</div>', unsafe_allow_html=True)
-    df = load_data()
-    df, dropped, cap_count, outlier_count = preprocess_data(df)
+# Dendrogram visualization
+plt.figure(figsize=(10, 5))
+dendrogram = sch.dendrogram(sch.linkage(X, method='ward'))
+plt.title('Dendrogram for Agglomerative Clustering')
+plt.xlabel('Samples')
+plt.ylabel('Euclidean distances')
+plt.show()
 
-    col_filters = st.sidebar
-    col_filters.header("🔎 Filters")
-    selected_edu = col_filters.multiselect("Select Education Level:", options=df['Education'].unique(), default=df['Education'].unique())
-    selected_marital = col_filters.multiselect("Select Marital Group:", options=df['Marital_Group'].unique(), default=df['Marital_Group'].unique())
-    income_range = col_filters.slider("Select Income Range:", min_value=int(df['Income'].min()), max_value=int(df['Income'].max()), value=(int(df['Income'].min()), int(df['Income'].max())))
 
-    df_filtered = df[(df['Education'].isin(selected_edu)) &
-                     (df['Marital_Group'].isin(selected_marital)) &
-                     (df['Income'] >= income_range[0]) & (df['Income'] <= income_range[1])]
+print("\n----- DBSCAN Clustering -----")
+eps_values = [0.5, 0.7, 0.9, 1.1]
+dbscan_scores = {}
+for eps in eps_values:
+    dbscan = DBSCAN(eps=eps, min_samples=5)
+    labels = dbscan.fit_predict(X)
+    unique_labels = set(labels)
+    if len(unique_labels) > 1 and -1 not in unique_labels:
+        score = silhouette_score(X, labels)
+        dbscan_scores[eps] = score
+        print(f"DBSCAN with eps={eps}, Silhouette Score: {score:.3f}")
+    else:
+        print(f"DBSCAN with eps={eps} did not yield valid clusters.")
+if dbscan_scores:
+    best_eps = max(dbscan_scores, key=dbscan_scores.get)
+    print(f"Best eps for DBSCAN: {best_eps}")
+    dbscan_best = DBSCAN(eps=best_eps, min_samples=5)
+    data['Cluster_DBSCAN'] = dbscan_best.fit_predict(X)
+else:
+    data['Cluster_DBSCAN'] = -1
 
-    features = ['Income', 'Age', 'Total_Spending', 'Education', 'Marital_Group', 'Children']
-    accuracy, conf, auc, fpr, tpr, importances, feature_names = random_forest(df_filtered, features, 'Response')
-    plots = cluster_visuals(df_filtered)
+# Visualization for DBSCAN clusters via PCA
+plt.figure(figsize=(8,6))
+sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='Cluster_DBSCAN', palette='Set1', alpha=0.7)
+plt.title("DBSCAN Clusters via PCA")
+plt.show()
 
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        st.header("📌 Model & Data Insights")
-        st.metric("Accuracy", f"{accuracy*100:.2f}%")
-        st.write(f"Capped Spending values: {cap_count}")
-        st.write(f"Removed Income outliers: {outlier_count}")
-        st.write("Dropped Columns:", dropped)
-        st.write("Features used:", features)
-        st.write("Models Applied: Random Forest, KMeans, Agglomerative, GMM")
+# Bar plot showing DBSCAN cluster distribution
+plt.figure(figsize=(8,4))
+sns.countplot(x='Cluster_DBSCAN', data=data, palette='Set2')
+plt.title("Distribution of DBSCAN Clusters")
+plt.show()
 
-    with col2:
-        st.header("📈 Visualizations")
-        st.subheader("Random Forest Performance")
-        fig_conf, ax_conf = plt.subplots()
-        sns.heatmap(conf, annot=True, cmap='Blues', fmt='d', ax=ax_conf)
-        ax_conf.set_title("Confusion Matrix")
-        st.pyplot(fig_conf)
 
-        fig_roc, ax_roc = plt.subplots()
-        ax_roc.plot(fpr, tpr, label=f"AUC = {auc:.2f}")
-        ax_roc.plot([0,1],[0,1],'k--')
-        ax_roc.set_title("ROC Curve")
-        st.pyplot(fig_roc)
+print("\n----- Gaussian Mixture Model (GMM) Clustering -----")
+gmm_scores = {}
+for n in k_values:
+    gmm = GaussianMixture(n_components=n, random_state=42)
+    gmm_labels = gmm.fit_predict(X)
+    score = silhouette_score(X, gmm_labels)
+    gmm_scores[n] = score
+    print(f"GMM with {n} components, Silhouette Score: {score:.3f}")
+best_n_gmm = max(gmm_scores, key=gmm_scores.get)
+print(f"Best number of components for GMM: {best_n_gmm}")
+gmm_best = GaussianMixture(n_components=best_n_gmm, random_state=42)
+data['Cluster_GMM'] = gmm_best.fit_predict(X)
 
-        fig_imp, ax_imp = plt.subplots()
-        sorted_idx = np.argsort(importances)[::-1]
-        sns.barplot(x=importances[sorted_idx], y=np.array(feature_names)[sorted_idx], ax=ax_imp, palette='mako')
-        ax_imp.set_title("Feature Importance")
-        st.pyplot(fig_imp)
+# Visualization for GMM clusters via PCA
+plt.figure(figsize=(8,6))
+sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='Cluster_GMM', palette='magma', alpha=0.7)
+plt.title("GMM Clusters via PCA")
+plt.show()
 
-    st.markdown("### 🔍 Cluster Visualizations")
-    clust_cols = st.columns(len(plots))
-    for i, (name, fig) in enumerate(plots.items()):
-        with clust_cols[i]:
-            st.pyplot(fig, use_container_width=True)
+# Bar plot showing GMM cluster distribution
+plt.figure(figsize=(8,4))
+sns.countplot(x='Cluster_GMM', data=data, palette='magma')
+plt.title("Distribution of GMM Clusters")
+plt.show()
 
-    st.markdown("### 🧭 Module Flowchart")
-    g = graphviz.Digraph()
-    g.node("A", "Load Data")
-    g.node("B", "Preprocess")
-    g.node("C", "Random Forest")
-    g.node("D", "Clustering")
-    g.edges([("A", "B"), ("B", "C"), ("B", "D")])
-    st.graphviz_chart(g)
 
-if __name__ == "__main__":
-    main()
+# Prepare data for supervised learning
+X_supervised = data[clustering_features]
+y_supervised = data['Response']
+
+# Split the data (70% train, 30% test) with stratification
+X_train, X_test, y_train, y_test = train_test_split(X_supervised, y_supervised,
+                                                    test_size=0.3, random_state=42, stratify=y_supervised)
+
+# Train the Random Forest Classifier
+rf = RandomForestClassifier(n_estimators=100, random_state=42)
+rf.fit(X_train, y_train)
+
+# Predictions and evaluation
+y_pred = rf.predict(X_test)
+y_proba = rf.predict_proba(X_test)[:, 1]
+print("\n----- Random Forest Classifier Results -----")
+print("Classification Report:")
+print(classification_report(y_test, y_pred))
+print("Confusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+print(f"ROC AUC Score: {roc_auc_score(y_test, y_proba):.3f}")
+
+# ROC Curve Visualization
+fpr, tpr, thresholds = roc_curve(y_test, y_proba)
+plt.figure(figsize=(8,6))
+plt.plot(fpr, tpr, label=f'ROC Curve (AUC = {roc_auc_score(y_test, y_proba):.3f})')
+plt.plot([0,1], [0,1], 'k--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title("ROC Curve for Random Forest Classifier")
+plt.legend(loc='lower right')
+plt.show()
+
+# Feature Importance Visualization
+importances = rf.feature_importances_
+indices = np.argsort(importances)[::-1]
+features = X_supervised.columns
+
+plt.figure(figsize=(8,6))
+sns.barplot(x=importances[indices], y=features[indices], palette='viridis')
+plt.title("Feature Importance from Random Forest")
+plt.xlabel("Importance Score")
+plt.ylabel("Features")
+plt.show()
+
+
