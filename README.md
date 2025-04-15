@@ -1,6 +1,9 @@
 # 🚀 Customer Segmentation & Prediction Dashboard 🎯
-https://cutsomer-segmentation-group3.streamlit.app/ - click this to see dasboard
--Welcome to the **Customer Segmentation Dashboard** project — an end-to-end data science solution that uses clustering and classification techniques to better understand and target customers based on their behavior.
+
+[👉 Click here to see the live dashboard](https://cutsomer-segmentation-group3.streamlit.app/)
+
+Welcome to the **Customer Segmentation Dashboard** project — an end-to-end data science solution that uses clustering and classification techniques to better understand and target customers based on their behavior.
+
 
 ---
 
