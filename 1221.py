@@ -13,11 +13,29 @@ from sklearn.mixture import GaussianMixture
 from sklearn.decomposition import PCA
 import scipy.cluster.hierarchy as sch
 import graphviz
-import streamlit.components.v1 as components
-import base64
-from io import BytesIO
 
 st.set_page_config(layout="wide", page_title="Customer Dashboard", page_icon="📊")
+
+# --- Custom CSS Styling ---
+st.markdown(
+    """
+    <style>
+    .main {
+        background-color: #f5f5f5;
+    }
+    .block-container {
+        padding-top: 2rem;
+    }
+    .title-style {
+        font-size: 3rem;
+        font-weight: bold;
+        color: #4a4a4a;
+        text-align: center;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 @st.cache_data
 def load_data():
@@ -32,10 +50,10 @@ def preprocess_data(data):
     cap_val = data['Total_Spending'].quantile(0.99)
     capped_count = (data['Total_Spending'] > cap_val).sum()
     data['Total_Spending'] = np.where(data['Total_Spending'] > cap_val, cap_val, data['Total_Spending'])
-
+    
     median_income = data['Income'].median()
     data['Income'].fillna(median_income, inplace=True)
-
+    
     Q1 = data['Income'].quantile(0.25)
     Q3 = data['Income'].quantile(0.75)
     IQR = Q3 - Q1
@@ -43,18 +61,19 @@ def preprocess_data(data):
     upper = Q3 + 1.5 * IQR
     outliers = len(data[(data['Income'] < lower) | (data['Income'] > upper)])
     data['Income'] = np.clip(data['Income'], lower, upper)
-
+    
     data['Children'] = data['Kidhome'] + data['Teenhome']
     data.drop(['Kidhome', 'Teenhome'], axis=1, inplace=True)
-
-    data['Marital_Group'] = data['Marital_Status'].apply(lambda x: 'Single' if x in ['Single','YOLO','Absurd','Divorced','Widow','Alone'] else 'Family')
+    
+    data['Marital_Group'] = data['Marital_Status'].apply(
+        lambda x: 'Single' if x in ['Single','YOLO','Absurd','Divorced','Widow','Alone'] else 'Family')
     data['Education'] = data['Education'].replace({
         'Basic': 'Undergraduate',
         '2n Cycle': 'Undergraduate',
         'Graduation': 'Graduate',
         'Master': 'Postgraduate',
         'PhD': 'Postgraduate'})
-
+    
     drop_cols = ['ID', 'Year_Birth', 'Dt_Customer', 'Z_CostContact', 'Z_Revenue']
     data.drop(columns=drop_cols, inplace=True)
     return data, drop_cols, capped_count, outliers
@@ -64,18 +83,19 @@ def random_forest(data, features, target):
     y = data[target]
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.3, stratify=y, random_state=42)
-
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y, test_size=0.3, stratify=y, random_state=42)
+    
     model = RandomForestClassifier(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
     y_prob = model.predict_proba(X_test)[:,1]
-
+    
     report = classification_report(y_test, y_pred, output_dict=True)
     conf = confusion_matrix(y_test, y_pred)
     auc = roc_auc_score(y_test, y_prob)
     fpr, tpr, _ = roc_curve(y_test, y_prob)
-
+    
     importance = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=42)
     return report['accuracy'], conf, auc, fpr, tpr, importance.importances_mean, X.columns.tolist()
 
@@ -84,80 +104,144 @@ def cluster_visuals(data):
     scaled = StandardScaler().fit_transform(data[clustering_cols])
     pca = PCA(n_components=2).fit_transform(scaled)
     data['PCA1'], data['PCA2'] = pca[:,0], pca[:,1]
-
+    
     plots = {}
-
-    def fig_to_html(fig):
-        buf = BytesIO()
-        fig.savefig(buf, format="png", bbox_inches='tight')
-        buf.seek(0)
-        encoded = base64.b64encode(buf.read()).decode()
-        html = f"""
-        <div style='transition: transform 0.3s ease; margin: 10px; width: 250px; height: auto; overflow: hidden;'>
-            <img src='data:image/png;base64,{encoded}' style='width:100%; height:auto; border-radius:10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); transition: transform 0.3s ease-in-out;' onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'"/>
-        </div>
-        """
-        return html
-
+    
     kmeans = KMeans(n_clusters=2, random_state=42)
     data['KMeans'] = kmeans.fit_predict(scaled)
-    fig1, ax1 = plt.subplots()
+    fig1, ax1 = plt.subplots(figsize=(4,3))
     sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='KMeans', palette='tab10', ax=ax1)
     ax1.set_title("KMeans Clustering (k=2)")
-    plots['KMeans'] = fig_to_html(fig1)
+    plots['KMeans'] = fig1
     data.drop(columns=['KMeans'], inplace=True)
-
-    fig2, ax2 = plt.subplots()
+    
+    fig2, ax2 = plt.subplots(figsize=(4,3))
     sch.dendrogram(sch.linkage(scaled, method='ward'), no_labels=True, ax=ax2)
     ax2.set_title("Agglomerative Dendrogram (k=2)")
-    plots['Agglomerative'] = fig_to_html(fig2)
-
+    plots['Agglomerative'] = fig2
+    
     gmm = GaussianMixture(n_components=2, random_state=42)
     data['GMM'] = gmm.fit_predict(scaled)
-    fig3, ax3 = plt.subplots()
+    fig3, ax3 = plt.subplots(figsize=(4,3))
     sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='GMM', palette='tab10', ax=ax3)
     ax3.set_title("GMM Clustering (k=2)")
-    plots['GMM'] = fig_to_html(fig3)
+    plots['GMM'] = fig3
     data.drop(columns=['GMM'], inplace=True)
-
+    
     dbscan = DBSCAN(eps=0.5, min_samples=5)
     data['DBSCAN'] = dbscan.fit_predict(scaled)
-    fig4, ax4 = plt.subplots()
+    fig4, ax4 = plt.subplots(figsize=(4,3))
     sns.scatterplot(data=data, x='PCA1', y='PCA2', hue='DBSCAN', palette='tab10', ax=ax4)
     ax4.set_title("DBSCAN Clustering")
-    plots['DBSCAN'] = fig_to_html(fig4)
-
+    plots['DBSCAN'] = fig4
+    
     return plots
 
 def main():
-    st.title("📊 Customer Segmentation & Prediction Dashboard")
+    st.markdown('<div class="title-style">🚀 Customer Segmentation & Prediction Dashboard 🎯</div>', unsafe_allow_html=True)
     df = load_data()
     df, dropped, cap_count, outlier_count = preprocess_data(df)
-
+    
     col_filters = st.sidebar
     col_filters.header("🔎 Filters")
-    selected_edu = col_filters.multiselect("🎓 Select Education Level:", options=df['Education'].unique(), default=df['Education'].unique())
-    selected_marital = col_filters.multiselect("💍 Select Marital Group:", options=df['Marital_Group'].unique(), default=df['Marital_Group'].unique())
-    income_range = col_filters.slider("💰 Select Income Range:", min_value=int(df['Income'].min()), max_value=int(df['Income'].max()), value=(int(df['Income'].min()), int(df['Income'].max())))
-
+    selected_edu = col_filters.multiselect("🎓 Select Education Level:",
+                                           options=df['Education'].unique(),
+                                           default=df['Education'].unique())
+    selected_marital = col_filters.multiselect("💍 Select Marital Group:",
+                                               options=df['Marital_Group'].unique(),
+                                               default=df['Marital_Group'].unique())
+    income_range = col_filters.slider("💰 Select Income Range:",
+                                      min_value=int(df['Income'].min()),
+                                      max_value=int(df['Income'].max()),
+                                      value=(int(df['Income'].min()), int(df['Income'].max())))
+    
     df_filtered = df[(df['Education'].isin(selected_edu)) &
                      (df['Marital_Group'].isin(selected_marital)) &
                      (df['Income'] >= income_range[0]) & (df['Income'] <= income_range[1])]
-
+    
     features = ['Income', 'Age', 'Total_Spending', 'Education', 'Marital_Group', 'Children']
     accuracy, conf, auc, fpr, tpr, importances, feature_names = random_forest(df_filtered, features, 'Response')
     plots = cluster_visuals(df_filtered)
-
-    st.header("📌 Model Insights")
-    st.metric("✅ Accuracy", f"{accuracy*100:.2f}%")
-
-    st.subheader("🌀 Cluster Visualizations")
-    html_content = "".join(plots.values())
-    components.html(f"""
-        <div style='display:flex; flex-wrap: wrap; justify-content: center;'>
-            {html_content}
-        </div>
-    """, height=600, scrolling=True)
-
-if __name__ == '__main__':
+    
+    # Left Column: Data & Model Insights and interactive model details
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.header("📌 Model & Data Insights")
+        st.metric("✅ Accuracy", f"{accuracy*100:.2f}%")
+        st.write(f"📦 Capped Spending values: {cap_count}")
+        st.write(f"📉 Removed Income outliers: {outlier_count}")
+        st.write("🧾 Dropped Columns:", dropped)
+        st.write("🧮 Features used:", features)
+        
+        st.markdown("### 🤖 Models Applied")
+        with st.expander("🌲 Random Forest (Main Model)"):
+            st.write("""\
+Random Forest was used as our primary predictive model for customer response classification.  
+- **Ensemble learning:** Combines many decision trees for robust predictions.  
+- **High accuracy and interpretability:** Provides useful feature importance for insights.
+            """)
+        with st.expander("🎯 KMeans"):
+            st.write("""\
+KMeans was used to partition the customers into clusters based on purchasing behavior and demographics.  
+- **Centroid-based clustering:** Quick and efficient segmentation.  
+- **Helps in targeting marketing campaigns effectively.**
+            """)
+        with st.expander("🧩 Agglomerative"):
+            st.write("""\
+Agglomerative Clustering builds hierarchies of clusters using a bottom-up approach.  
+- **Hierarchical segmentation:** Reveals natural groupings in the data.  
+- **Helps identify customer sub-groups.**
+            """)
+        with st.expander("🎲 GMM"):
+            st.write("""\
+Gaussian Mixture Model (GMM) provides probabilistic clustering for flexible segmentation.  
+- **Soft assignments:** Customers can belong to clusters with different probabilities.  
+- **Useful for overlapping clusters.**
+            """)
+        with st.expander("🌌 DBSCAN"):
+            st.write("""\
+DBSCAN identifies clusters based on density, detecting noise and outliers automatically.  
+- **Non-parametric:** No need to pre-specify the number of clusters.  
+- **Detects arbitrary-shaped clusters.**
+            """)
+        
+        st.markdown("### 🧭 Module Flowchart")
+        g = graphviz.Digraph()
+        g.node("A", "📥 Load Data")
+        g.node("B", "🛠️ Preprocess")
+        g.node("C", "🌲 Random Forest (Main Model)")
+        g.node("D", "🔀 Clustering")
+        g.node("E", "📊 Dashboard")
+        g.edges([("A", "B"), ("B", "C"), ("B", "D"), ("C", "E"), ("D", "E")])
+        st.graphviz_chart(g)
+        
+    # Right Column: Visualizations
+    with col2:
+        st.header("📈 Visualizations")
+        st.subheader("📊 Random Forest Performance")
+        fig_conf, ax_conf = plt.subplots(figsize=(6,4))
+        sns.heatmap(conf, annot=True, cmap='Blues', fmt='d', ax=ax_conf)
+        ax_conf.set_title("Confusion Matrix")
+        st.pyplot(fig_conf)
+        
+        fig_roc, ax_roc = plt.subplots(figsize=(6,4))
+        ax_roc.plot(fpr, tpr, label=f"AUC = {auc:.2f}")
+        ax_roc.plot([0,1],[0,1],'k--')
+        ax_roc.set_title("ROC Curve")
+        ax_roc.legend()
+        st.pyplot(fig_roc)
+        
+        fig_imp, ax_imp = plt.subplots(figsize=(6,4))
+        sorted_idx = np.argsort(importances)[::-1]
+        sns.barplot(x=importances[sorted_idx], y=np.array(feature_names)[sorted_idx], ax=ax_imp, palette='mako')
+        ax_imp.set_title("Feature Importance")
+        st.pyplot(fig_imp)
+        
+    st.markdown("### 🔍 Cluster Visualizations 🌀")
+    clust_cols = st.columns(len(plots))
+    for i, (name, fig) in enumerate(plots.items()):
+        with clust_cols[i]:
+            st.pyplot(fig, use_container_width=True)
+            
+if __name__ == "__main__":
     main()
